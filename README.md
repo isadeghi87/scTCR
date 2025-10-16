@@ -1,5 +1,12 @@
 # scTCR: COVID‑linked scTCR repertoire
 
+**Author:** Dr. Iman Sadeghi Dehcheshmeh  
+**Last Updated:** October 2025
+
+---
+
+## 🧬 Project Overview
+
 This repository contains analysis code and figures for our COVID‑focused TCR/Transcriptome study in pediatric liver samples. It integrates **Seurat** RNA data with **scRepertoire** TCR annotations and adds a set of *Scirpy‑inspired* repertoire summaries (spectratypes, clonotype overlap, V/J skew, and clonotype‑level marker profiles).
 
 > **Key outputs**: clonotype–epitope mapping against VDJdb, confidence‑tiered “COVID‑hit” labels per cell, clonotype expansion statistics, V/J enrichment and V–J chord diagrams, β‑CDR3 similarity networks, and differential expression for CD8 COVID‑hit clones.
