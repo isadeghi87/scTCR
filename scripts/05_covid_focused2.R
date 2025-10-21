@@ -759,67 +759,118 @@ build_trb_table <- function(seu, tab_dir){
 suppressPackageStartupMessages(library(circlize))
 
 # Make a chord diagram from TRB V-J usage
-make_vj_chord <- function(df, title, file_out, min_pair_count = 10, normalize_rows = FALSE){
-  # df needs columns: TRB_v, TRB_j
-  tab <- df %>%
-    count(TRB_v, TRB_j, name = "n")
+make_vj_chord <- function(df,
+                          title        = "TRB V–J usage chord diagram",
+                          file_out     = "vj_chord_TRB.png",
+                          min_pair_count = 10,
+                          normalize_rows = FALSE,
+                          from_contigs = FALSE,
+                          V_col = NULL, J_col = NULL,         # only used when from_contigs=TRUE
+                          seed = 1) {
   
-  # prune rare pairs to keep plot readable
+  set.seed(seed)
+  
+  if (from_contigs) {
+    stopifnot(!is.null(V_col), !is.null(J_col))
+    tab <- df %>%
+      transmute(TRB_v = .data[[V_col]], TRB_j = .data[[J_col]]) %>%
+      filter(!is.na(TRB_v), !is.na(TRB_j)) %>%
+      count(TRB_v, TRB_j, name = "n")
+  } else {
+    tab <- df %>% count(TRB_v, TRB_j, name = "n")
+  }
+  
+  # prune to keep the plot readable
   tab <- tab %>% filter(n >= min_pair_count)
-  if (nrow(tab) == 0L) {
+  if (!nrow(tab)) {
     message("[chord] No pairs above min_pair_count = ", min_pair_count, " → skipping: ", file_out)
     return(invisible(NULL))
   }
   
-  # wide matrix
+  # wide matrix (rows = V, cols = J)
   mat <- tab %>%
     tidyr::pivot_wider(names_from = TRB_j, values_from = n, values_fill = 0) %>%
     as.data.frame()
-  rownames(mat) <- mat$TRB_v; mat$TRB_v <- NULL
+  rownames(mat) <- mat$TRB_v
+  mat$TRB_v <- NULL
   m <- as.matrix(mat)
   
   if (normalize_rows) {
-    rs <- rowSums(m)
-    rs[rs == 0] <- 1
+    rs <- rowSums(m); rs[rs == 0] <- 1
     m <- sweep(m, 1, rs, "/")
   }
   
-  # order rows/cols by total weight for nicer layout
+  ## ---- Make sector names unique & order them nicely
+  V_names <- rownames(m)
+  J_names <- colnames(m)
+  V_lab   <- paste0("V:", V_names)
+  J_lab   <- paste0("J:", J_names)
+  dimnames(m) <- list(V_lab, J_lab)
+  
+  # order by total weights for a cleaner layout
   rord <- order(rowSums(m), decreasing = TRUE)
   cord <- order(colSums(m), decreasing = TRUE)
   m <- m[rord, cord, drop = FALSE]
+  V_lab <- rownames(m); J_lab <- colnames(m)
   
-  # colors: V in teal, J in salmon (auto-extended)
-  col_v <- rep("#1F9E89", length.out = nrow(m))
-  names(col_v) <- rownames(m)
-  col_j <- rep("#E76F51", length.out = ncol(m))
-  names(col_j) <- colnames(m)
-  grid_col <- c(col_v, col_j)
+  ## ---- Palettes
+  # V side: many distinct hues (wraps automatically)
+  palV <- hue_pal()(max(8, length(V_lab)))
+  names(palV) <- V_lab
+  # J side: another palette (salmon/orange tone family)
+  palJ <- hue_pal(h = c(10, 30))(max(6, length(J_lab)))
+  names(palJ) <- J_lab
+  grid_col <- c(palV, palJ)
+  
+  ## ---- Optional: color each link by its V gene to help track V-specific preferences
+  # Build long edge list from m
+  edges <- as.data.frame(as.table(m), stringsAsFactors = FALSE)
+  colnames(edges) <- c("from", "to", "value")
+  edges <- edges %>% filter(value > 0)
+  
+  # link color = color of the V sector (from)
+  link_col <- palV[match(edges$from, names(palV))]
+  # use some transparency so overlaps are visible
+  link_col <- alpha(link_col, 0.6)
+  
+  ## ---- nice spacing: larger gap between V block and J block
+  gap_after <- c(rep(2, length(V_lab) - 1), 10, rep(2, length(J_lab) - 1), 10)
   
   png(file_out, width = 1400, height = 1200, res = 180)
   circos.clear()
-  par(mar = c(1,1,3,1))
+  circos.par(gap.after = gap_after, start.degree = 90, track.margin = c(0, 0.01))
+  par(mar = c(1, 1, 3, 1))
+  
+  # We plot from edge list so we can pass per-link colors
   chordDiagram(
-    m,
+    x = edges,
     grid.col = grid_col,
-    transparency = 0.65,
+    col = link_col,
+    transparency = 0.15,           # lower transparency = more vivid
     annotationTrack = "grid",
     preAllocateTracks = list(track.height = 0.08)
   )
-  # label sectors
+  
+  # Label sectors with small text that follows the circle
   circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
     sector.name <- get.cell.meta.data("sector.index")
-    circos.text(get.cell.meta.data("xcenter"), get.cell.meta.data("ylim")[1],
-                sector.name, facing = "clockwise", niceFacing = TRUE,
-                adj = c(0, 0.5), cex = 0.6)
+    circos.text(
+      get.cell.meta.data("xcenter"),
+      get.cell.meta.data("ylim")[1],
+      sector.name,
+      facing = "clockwise",
+      niceFacing = TRUE,
+      adj = c(0, 0.5),
+      cex = 0.6
+    )
   }, bg.border = NA)
-  title(title, cex.main = 1.3)
+  
+  title(title, cex.main = 1.25)
   dev.off()
   
   message("[chord] saved: ", file_out)
   invisible(m)
 }
-
 
 
 ## run
